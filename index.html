@@ -364,6 +364,18 @@ main{flex:1;padding:16px 16px 100px;display:flex;flex-direction:column;gap:16px;
 .map-area{stroke:var(--bg-soft);stroke-width:1;vector-effect:non-scaling-stroke;cursor:pointer;}
 .map-area:active{filter:brightness(0.92);}
 .map-nodata{fill:var(--border);fill-opacity:.4;stroke:var(--bg-soft);stroke-width:1;vector-effect:non-scaling-stroke;}
+.map-label-layer{transition:opacity .2s ease;}
+.map-label-layer text{font-family:"Zen Maru Gothic","Noto Sans JP",sans-serif;fill:#fff;paint-order:stroke fill;stroke:rgba(10,18,14,.62);stroke-linejoin:round;user-select:none;}
+.map-label-district{opacity:1;pointer-events:none;}
+#realMap.zoomed-in .map-label-district{opacity:0;}
+.map-label-district text{stroke-width:16px;}
+.map-label-district .lbl-name{font-size:150px;font-weight:700;}
+.map-label-district .lbl-pct{font-size:128px;font-weight:700;font-family:"Space Grotesk",sans-serif;}
+.map-label-area{opacity:0;pointer-events:none;}
+#realMap.zoomed-in .map-label-area{opacity:1;pointer-events:auto;}
+.map-label-area text{cursor:pointer;}
+.map-label-area .lbl-name{font-weight:700;}
+.map-label-area .lbl-pct{font-weight:700;font-family:"Space Grotesk",sans-serif;}
 .map-hint{position:absolute;bottom:8px;left:10px;font-size:10.5px;color:var(--text-faint);background:color-mix(in srgb, var(--surface) 78%, transparent);padding:3px 8px;border-radius:8px;pointer-events:none;}
 .map-attribution{position:absolute;bottom:8px;right:10px;font-size:9.5px;color:var(--text-faint);background:color-mix(in srgb, var(--surface) 78%, transparent);padding:3px 7px;border-radius:8px;pointer-events:none;}
 .map-district-jump{padding:11px 16px 0;}
@@ -1002,6 +1014,7 @@ function rankRowHtml(name,val,i,max){
     <div class="rank-val num">${fmt(val)}</div></div>`;
 }
 function renderMiniMap(){
+  ensureLabelPositions();
   const svg = document.getElementById('miniMapSvg');
   let html = `<image href="${MAP_DATA.basemap}" x="0" y="0" width="${MAP_DATA.viewW}" height="${MAP_DATA.viewH}" preserveAspectRatio="none"/>`;
   html += `<path d="${MAP_DATA.cityPath}" class="map-city-outline" fill="none"/>`;
@@ -1012,6 +1025,11 @@ function renderMiniMap(){
     const col = progressColor(st.pct);
     return `<path d="${p}" fill="${col}" fill-opacity="0.6" fill-rule="evenodd" class="mini-district" data-district="${d.id}"><title>${d.name} ${st.pct}%</title></path>`;
   }).join('');
+  html += `<g class="map-label-district" style="opacity:1;">` + DISTRICTS.map(d=>{
+    const pos = DISTRICT_LABEL_POS[d.id]; if(!pos) return '';
+    const st = districtStats(d);
+    return `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" text-anchor="middle"><tspan x="${pos.x.toFixed(1)}" dy="-0.15em" class="lbl-name">${d.short}</tspan><tspan x="${pos.x.toFixed(1)}" dy="1.15em" class="lbl-pct">${st.pct}%</tspan></text>`;
+  }).join('') + `</g>`;
   svg.innerHTML = html;
   svg.querySelectorAll('.mini-district').forEach(t=>t.addEventListener('click',()=>{
     navTo('areas');
@@ -1157,8 +1175,63 @@ function submitRecord(){
 let areaListStatus = 'all';
 let areaListDistrict = 'all';
 
+/* ---- label placement: derive a readable anchor point from an SVG path's largest ring ---- */
+function parsePathSubpaths(d){
+  const subs = [];
+  const blocks = d.split('M').slice(1);
+  const numRe = /(-?\d+\.?\d*),(-?\d+\.?\d*)/g;
+  for(const b of blocks){
+    const pts = []; let n;
+    numRe.lastIndex = 0;
+    while((n = numRe.exec(b))){ pts.push([parseFloat(n[1]), parseFloat(n[2])]); }
+    if(pts.length>=3) subs.push(pts);
+  }
+  return subs;
+}
+function polygonAreaCentroid(pts){
+  let area=0, cx=0, cy=0;
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const p of pts){ if(p[0]<minx)minx=p[0]; if(p[0]>maxx)maxx=p[0]; if(p[1]<miny)miny=p[1]; if(p[1]>maxy)maxy=p[1]; }
+  for(let i=0;i<pts.length;i++){
+    const p0=pts[i], p1=pts[(i+1)%pts.length];
+    const cross = p0[0]*p1[1] - p1[0]*p0[1];
+    area += cross; cx += (p0[0]+p1[0])*cross; cy += (p0[1]+p1[1])*cross;
+  }
+  area *= 0.5;
+  const w = maxx-minx, h = maxy-miny;
+  if(Math.abs(area) < 1e-6){
+    const n = pts.length;
+    return {x: pts.reduce((s,p)=>s+p[0],0)/n, y: pts.reduce((s,p)=>s+p[1],0)/n, area:0, w, h};
+  }
+  return {x: cx/(6*area), y: cy/(6*area), area: Math.abs(area), w, h};
+}
+function labelPointFromPath(d){
+  const subs = parsePathSubpaths(d);
+  let best = null;
+  for(const pts of subs){
+    const c = polygonAreaCentroid(pts);
+    if(!best || c.area>best.area) best = c;
+  }
+  return best;
+}
+let DISTRICT_LABEL_POS = null, AREA_LABEL_POS = null;
+function ensureLabelPositions(){
+  if(DISTRICT_LABEL_POS) return;
+  DISTRICT_LABEL_POS = {};
+  for(const [did,p] of Object.entries(MAP_DATA.districtPaths)){
+    const c = labelPointFromPath(p);
+    if(c) DISTRICT_LABEL_POS[did] = c;
+  }
+  AREA_LABEL_POS = {};
+  for(const [aid,p] of Object.entries(MAP_DATA.areaPaths)){
+    const c = labelPointFromPath(p);
+    if(c) AREA_LABEL_POS[aid] = c;
+  }
+}
+
 /* ---- real map: render ---- */
 function renderRealMap(){
+  ensureLabelPositions();
   const svg = document.getElementById('realMap');
   let html = `<image href="${MAP_DATA.basemap}" x="0" y="0" width="${MAP_DATA.viewW}" height="${MAP_DATA.viewH}" preserveAspectRatio="none"/>`;
   html += `<path d="${MAP_DATA.cityPath}" class="map-city-outline" fill="none"/>`;
@@ -1169,9 +1242,23 @@ function renderRealMap(){
     const col = progressColor(pct);
     return `<path d="${p}" fill="${col}" fill-opacity="0.58" fill-rule="evenodd" class="map-area" data-area="${aid}"><title>${a?a.name:''} ${pct}%</title></path>`;
   }).join('');
+  html += `<g class="map-label-layer map-label-district" id="labelLayerDistrict">` + DISTRICTS.map(d=>{
+    const pos = DISTRICT_LABEL_POS[d.id]; if(!pos) return '';
+    const st = districtStats(d);
+    return `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" text-anchor="middle"><tspan x="${pos.x.toFixed(1)}" dy="-0.15em" class="lbl-name">${d.short}</tspan><tspan x="${pos.x.toFixed(1)}" dy="1.15em" class="lbl-pct">${st.pct}%</tspan></text>`;
+  }).join('') + `</g>`;
+  html += `<g class="map-label-layer map-label-area" id="labelLayerArea">` + Object.entries(MAP_DATA.areaPaths).map(([aid,p])=>{
+    const pos = AREA_LABEL_POS[aid]; const a = AREA_BY_ID[aid];
+    if(!pos || !a) return '';
+    const pct = areaPct(a);
+    return `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" text-anchor="middle" data-area="${aid}"><tspan x="${pos.x.toFixed(1)}" dy="-0.15em" class="lbl-name">${a.name}</tspan><tspan x="${pos.x.toFixed(1)}" dy="1.15em" class="lbl-pct">${pct}%</tspan></text>`;
+  }).join('') + `</g>`;
   svg.innerHTML = html;
   svg.querySelectorAll('.map-area').forEach(p=>{
     p.addEventListener('click', ()=>{ if(mapDragMoved>8) return; openAreaDetail(p.dataset.area); });
+  });
+  svg.querySelectorAll('.map-label-area text').forEach(t=>{
+    t.addEventListener('click', ()=>{ if(mapDragMoved>8) return; openAreaDetail(t.dataset.area); });
   });
   applyMapView();
 }
@@ -1194,6 +1281,34 @@ let mapDragMoved = 0;
 function applyMapView(){
   const svg = document.getElementById('realMap');
   svg.setAttribute('viewBox', `${mapView.x.toFixed(1)} ${mapView.y.toFixed(1)} ${mapView.w.toFixed(1)} ${mapView.h.toFixed(1)}`);
+  const zoomRatio = MAP_DATA.viewW / mapView.w;
+  svg.classList.toggle('zoomed-in', zoomRatio >= 1.4);
+  updateAreaLabelVisibility();
+}
+const AREA_LABEL_NAME_PX = 11.5, AREA_LABEL_PCT_PX = 14;
+function updateAreaLabelVisibility(){
+  const svg = document.getElementById('realMap');
+  if(!AREA_LABEL_POS || !svg.classList.contains('zoomed-in')) return;
+  const wrap = document.getElementById('mapSvgWrap');
+  const rect = wrap.getBoundingClientRect();
+  if(!rect.width) return;
+  const pxPerUnit = rect.width / mapView.w;
+  const unitsPerPx = 1/pxPerUnit;
+  const minPx = 46;
+  const nameSize = (AREA_LABEL_NAME_PX*unitsPerPx).toFixed(2)+'px';
+  const pctSize = (AREA_LABEL_PCT_PX*unitsPerPx).toFixed(2)+'px';
+  const strokeW = (1.6*unitsPerPx).toFixed(2)+'px';
+  svg.querySelectorAll('.map-label-area text').forEach(t=>{
+    const pos = AREA_LABEL_POS[t.dataset.area];
+    const show = pos && pos.w*pxPerUnit>=minPx && pos.h*pxPerUnit>=minPx*0.55;
+    t.style.display = show ? '' : 'none';
+    if(show){
+      t.style.strokeWidth = strokeW;
+      const nm = t.querySelector('.lbl-name'), pc = t.querySelector('.lbl-pct');
+      if(nm) nm.style.fontSize = nameSize;
+      if(pc) pc.style.fontSize = pctSize;
+    }
+  });
 }
 function clampMapView(){
   const minW = MAP_DATA.viewW * 0.035, maxW = MAP_DATA.viewW * 1.15;
