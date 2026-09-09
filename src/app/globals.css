@@ -212,22 +212,23 @@ main{flex:1;padding:16px 16px 100px;display:flex;flex-direction:column;gap:10px;
 .hero-figures .goal{font-size:12.5px;opacity:.92;margin-top:6px;line-height:1.5;}
 .hero-figures .goal b{font-family:"Space Grotesk",sans-serif;}
 
-/* ---------- misc stat rows ---------- */
-.stat-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.stat-box{
-  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);
-  padding:7px 12px;
+/* ---------- home quick-stats row (streak / week / badges / ranking in one line) ---------- */
+.quick-stats-card{display:flex;padding:8px 4px;gap:2px;}
+.qstat{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:none;border:none;cursor:pointer;padding:6px 2px;border-radius:12px;min-width:0;
 }
-.stat-box .label{font-size:11px;color:var(--text-muted);font-weight:600;display:flex;align-items:center;gap:5px;}
-.stat-box .value{font-family:"Space Grotesk",sans-serif;font-size:18px;font-weight:700;margin-top:2px;}
-.stat-box .value .unit{font-size:11px;font-weight:500;color:var(--text-muted);margin-left:2px;font-family:"Noto Sans JP",sans-serif;}
-.delta{font-size:10.5px;font-weight:600;margin-top:1px;}
-.delta.up{color:var(--accent-strong);}
-.delta.down{color:var(--coral);}
-.stat-box.stat-coral{background:color-mix(in srgb, var(--coral) 14%, var(--surface-2));border-color:color-mix(in srgb, var(--coral) 30%, var(--border));}
-.stat-box.stat-coral .value{color:var(--coral);}
-.stat-box.stat-sky{background:color-mix(in srgb, var(--sky) 14%, var(--surface-2));border-color:color-mix(in srgb, var(--sky) 30%, var(--border));}
-.stat-box.stat-sky .value{color:var(--sky);}
+.qstat:active{background:var(--surface-2);}
+.qstat-ic{
+  width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:12px;flex:none;
+}
+.qi-coral{background:color-mix(in srgb, var(--coral) 22%, var(--surface-2));}
+.qi-sky{background:color-mix(in srgb, var(--sky) 22%, var(--surface-2));}
+.qi-gold{background:color-mix(in srgb, var(--gold) 24%, var(--surface-2));}
+.qi-purple{background:color-mix(in srgb, #6B5FA8 22%, var(--surface-2));}
+.qstat-val{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.qstat-lbl{font-size:8.5px;color:var(--text-muted);font-weight:600;white-space:nowrap;}
 
 /* ---------- badges ---------- */
 .badge-scroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:2px;margin:0 -4px;padding-left:4px;padding-right:4px;scrollbar-width:none;}

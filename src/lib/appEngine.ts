@@ -210,26 +210,18 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
     ring.setAttribute("stroke-dasharray", circumference.toFixed(1));
     ring.setAttribute("stroke-dashoffset", off.toFixed(1));
 
-    el("streakVal")!.innerHTML = computeStreak() + '<span class="unit">週連続</span>';
+    el("qsStreak")!.textContent = String(computeStreak());
 
     const thisWeek = weekKey(TODAY);
-    const lastWeekDate = new Date(TODAY);
-    lastWeekDate.setDate(lastWeekDate.getDate() - 7);
-    const lastWeek = weekKey(lastWeekDate);
     const thisWeekSum = records.filter((r) => weekKey(new Date(r.date)) === thisWeek).reduce((s, r) => s + r.count, 0);
-    const lastWeekSum = records.filter((r) => weekKey(new Date(r.date)) === lastWeek).reduce((s, r) => s + r.count, 0);
-    el("weekVal")!.innerHTML = fmt(thisWeekSum) + '<span class="unit">世帯</span>';
-    const wd = el("weekDelta")!;
-    if (lastWeekSum === 0 && thisWeekSum === 0) {
-      wd.textContent = "";
-    } else {
-      const diff = thisWeekSum - lastWeekSum;
-      wd.className = "delta " + (diff >= 0 ? "up" : "down");
-      wd.textContent = (diff >= 0 ? "▲" : "▼") + " 先週比 " + Math.abs(diff) + "世帯";
-    }
+    el("qsWeek")!.textContent = fmt(thisWeekSum);
 
-    renderBadges(el("badgeScroll")!);
-    renderRankPreview();
+    const badgeDefs = computeBadgeState();
+    el("qsBadges")!.textContent = `${badgeDefs.filter((b) => b.on).length}/${badgeDefs.length}`;
+
+    const weekTop = memberTotals("week").filter(([, v]) => v > 0);
+    el("qsLeader")!.textContent = weekTop.length ? weekTop[0][0] : "-";
+
     renderPhotoGallery();
     renderActivityFeed();
     setupMiniMap();
@@ -273,13 +265,6 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
     return `<div class="rank-row"><div class="rank-medal ${medalClass}">${i + 1}</div>
       <div class="rank-name">${name}<div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round((val / max) * 100)}%;background:linear-gradient(90deg,${col},color-mix(in srgb, ${col} 70%, black));"></div></div></div>
       <div class="rank-val num">${fmt(val)}</div></div>`;
-  }
-  function renderRankPreview() {
-    const top = memberTotals("week").slice(0, 3);
-    const max = Math.max(1, top[0] ? top[0][1] : 1);
-    el("rankPreview")!.innerHTML =
-      top.map(([name, val], i) => rankRowHtml(name, val, i, max)).join("") ||
-      '<div class="empty-note">今週の記録はまだありません</div>';
   }
   function renderPhotoGallery() {
     const container = el("photoScroll");

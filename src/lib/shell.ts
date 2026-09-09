@@ -34,26 +34,27 @@ export const SHELL_HTML = `
         <div class="hero-credit">📷 新発田城（本庁地区） ・ Drph17, CC BY 4.0, Wikimedia Commons</div>
       </div>
 
-      <div class="stat-row">
-        <div class="stat-box stat-coral">
-          <div class="label">🔥 継続ストリーク</div>
-          <div class="value num" id="streakVal">0<span class="unit">週連続</span></div>
-        </div>
-        <div class="stat-box stat-sky">
-          <div class="label">📬 今週の配布</div>
-          <div class="value num" id="weekVal">0<span class="unit">世帯</span></div>
-          <div class="delta" id="weekDelta"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title"><h3>実績バッジ</h3><button class="link" data-nav="ranking">すべて見る</button></div>
-        <div class="badge-scroll" id="badgeScroll"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-title"><h3>今週のランキング</h3><button class="link" data-nav="ranking">全体を見る</button></div>
-        <div id="rankPreview"></div>
+      <div class="card quick-stats-card">
+        <button class="qstat" data-nav="ranking">
+          <span class="qstat-ic qi-coral">🔥</span>
+          <span class="qstat-val num" id="qsStreak">0</span>
+          <span class="qstat-lbl">週連続</span>
+        </button>
+        <button class="qstat" data-nav="ranking">
+          <span class="qstat-ic qi-sky">📬</span>
+          <span class="qstat-val num" id="qsWeek">0</span>
+          <span class="qstat-lbl">今週世帯</span>
+        </button>
+        <button class="qstat" data-nav="ranking">
+          <span class="qstat-ic qi-gold">🏅</span>
+          <span class="qstat-val num" id="qsBadges">0</span>
+          <span class="qstat-lbl">バッジ</span>
+        </button>
+        <button class="qstat" data-nav="ranking">
+          <span class="qstat-ic qi-purple">🏆</span>
+          <span class="qstat-val" id="qsLeader">-</span>
+          <span class="qstat-lbl">今週1位</span>
+        </button>
       </div>
 
       <div class="card">
