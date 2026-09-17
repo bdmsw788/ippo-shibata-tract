@@ -584,6 +584,7 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
         }
       </div>
       <button class="btn-primary" style="margin-top:16px;" data-prefill-district="${a.districtId}" data-prefill-area="${a.id}">このエリアに記録を追加</button>
+      <button class="btn-secondary" style="margin-top:10px;" data-route-area="${a.id}">🗺️ 配布ルートを作成</button>
     `;
     openSheet(body);
   }
@@ -605,6 +606,12 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
     });
     sheet.querySelectorAll<HTMLElement>("[data-delete-id]").forEach((b) => {
       b.addEventListener("click", () => confirmDeleteRecord(b.dataset.deleteId!, b.dataset.reopenArea));
+    });
+    sheet.querySelectorAll<HTMLElement>("[data-route-area]").forEach((b) => {
+      b.addEventListener("click", () => {
+        closeSheet();
+        generateAndShowRoute(b.dataset.routeArea!);
+      });
     });
   }
   function closeSheet() {
@@ -646,6 +653,7 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
   let districtLayer: LType.GeoJSON | null = null;
   let areaLayer: LType.GeoJSON | null = null;
   let nodataLayer: LType.GeoJSON | null = null;
+  let routeLayer: LType.Polyline | null = null;
   let miniMap: LType.Map | null = null;
   let miniDistrictLayer: LType.GeoJSON | null = null;
   let mapSetupPromise: Promise<void> | null = null;
@@ -803,6 +811,45 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
     if (!feature || !map) return;
     map.invalidateSize();
     map.fitBounds(Leaf.geoJSON(feature).getBounds(), { padding: [24, 24], maxZoom: 16 });
+  }
+  async function zoomToArea(areaId: string) {
+    await setupMainMap();
+    const geo = await ensureGeoData();
+    await ensureLeaflet();
+    const feature = geo.areas.features.find((f) => f.properties!.areaId === areaId);
+    if (!feature || !map) return;
+    map.invalidateSize();
+    map.fitBounds(Leaf.geoJSON(feature).getBounds(), { padding: [24, 24], maxZoom: 17 });
+  }
+  async function generateAndShowRoute(areaId: string) {
+    const a = AREA_BY_ID[areaId];
+    if (!a) return;
+    navTo("areas");
+    const mapBtn = document.querySelector<HTMLElement>('#areaModeSeg button[data-mode="map"]');
+    mapBtn?.click();
+    await zoomToArea(areaId);
+    if (routeLayer) {
+      routeLayer.remove();
+      routeLayer = null;
+    }
+    showToast(`${a.name}の配布ルートを作成中…（30秒ほどかかることがあります）`);
+    try {
+      const res = await fetch(`/api/route/${encodeURIComponent(areaId)}`);
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data.coords) || data.coords.length < 2) {
+        showToast(data.error === "no street data found for this area" ? "このエリアの道路データが見つかりませんでした" : "ルートを作成できませんでした。しばらくしてからもう一度お試しください");
+        return;
+      }
+      await ensureLeaflet();
+      if (!map) return;
+      const latlngs = (data.coords as [number, number][]).map(([lon, lat]) => [lat, lon] as [number, number]);
+      routeLayer = Leaf.polyline(latlngs, { color: cssVar("--coral"), weight: 4, opacity: 0.9, lineJoin: "round" }).addTo(map);
+      map.fitBounds(routeLayer.getBounds(), { padding: [24, 24] });
+      const km = (data.distanceMeters / 1000).toFixed(1);
+      showToast(`ルートを作成しました（約${km}km）`, true);
+    } catch {
+      showToast("ルートを作成できませんでした。通信環境を確認してください");
+    }
   }
   function renderMapDistrictJump() {
     const container = el("mapDistrictJump");
