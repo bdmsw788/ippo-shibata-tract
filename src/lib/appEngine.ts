@@ -305,9 +305,13 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
           <div class="feed-sub">${jpDate(new Date(r.date))}${r.memo ? " ・ " + r.memo : ""}</div>
         </div>
         <div class="feed-count num">+${r.count}</div>
+        <button class="feed-del" data-delete-id="${r.id}" aria-label="この記録を削除" title="この記録を削除">✕</button>
       </div>`
       )
       .join("");
+    container.querySelectorAll<HTMLElement>("[data-delete-id]").forEach((b) => {
+      b.addEventListener("click", () => confirmDeleteRecord(b.dataset.deleteId!));
+    });
   }
 
   /* ---- render: record form ---- */
@@ -473,6 +477,33 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
       btn.disabled = false;
     }
   }
+  let deletingId: string | null = null;
+  function confirmDeleteRecord(id: string, reopenAreaId?: string) {
+    const r = records.find((x) => x.id === id);
+    if (!r) return;
+    const ok = window.confirm(`${r.member}さんの記録(${r.districtName}・${r.areaName} +${fmt(r.count)}世帯)を削除しますか？\nこの操作は元に戻せません。`);
+    if (ok) deleteRecord(id, reopenAreaId);
+  }
+  async function deleteRecord(id: string, reopenAreaId?: string) {
+    if (deletingId) return;
+    deletingId = id;
+    try {
+      const res = await fetch(`/api/records/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        showToast("削除できませんでした。通信環境を確認してください");
+        return;
+      }
+      const data = await res.json();
+      records = data.records;
+      showToast("記録を削除しました");
+      renderAll();
+      if (reopenAreaId) openAreaDetail(reopenAreaId);
+    } catch {
+      showToast("削除できませんでした。通信環境を確認してください");
+    } finally {
+      deletingId = null;
+    }
+  }
 
   /* ---- render: areas (list) ---- */
   let areaListStatus = "all";
@@ -544,7 +575,8 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
           <div class="feed-row"><div class="feed-dot" style="background:${memberColor(r.member)};"></div>
             <div class="feed-main"><div class="feed-title">${r.member}さん</div>
             <div class="feed-sub">${jpDate(new Date(r.date))}${r.memo ? " ・ " + r.memo : ""}</div></div>
-            <div class="feed-count num">+${r.count}</div></div>`
+            <div class="feed-count num">+${r.count}</div>
+            <button class="feed-del" data-delete-id="${r.id}" data-reopen-area="${areaId}" aria-label="この記録を削除" title="この記録を削除">✕</button></div>`
                 )
                 .join("")
             : '<div class="empty-note">まだ記録がありません</div>'
@@ -571,6 +603,9 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
         closeSheet();
         prefillRecord(b.dataset.prefillDistrict!, b.dataset.prefillArea!);
       });
+    });
+    sheet.querySelectorAll<HTMLElement>("[data-delete-id]").forEach((b) => {
+      b.addEventListener("click", () => confirmDeleteRecord(b.dataset.deleteId!, b.dataset.reopenArea));
     });
   }
   function closeSheet() {
