@@ -93,15 +93,21 @@ async function fetchOverpass(bbox: [number, number, number, number]): Promise<Ov
   const [minLat, minLon, maxLat, maxLon] = bbox;
   const query = `[out:json][timeout:25];way["highway"](${minLat},${minLon},${maxLat},${maxLon});out body;>;out skel qt;`;
   const attempts: string[] = [];
-  // Public Overpass mirrors rate-limit per client; a single request occasionally
-  // hits a mirror mid-cooldown, so cycle the mirror list twice with a short
-  // backoff rather than giving up after one pass.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt > 0) await sleep(3000);
+  // Public Overpass mirrors are shared, free infrastructure and routinely
+  // return 429 (rate limited) or block whole cloud IP ranges outright, so a
+  // single pass through the mirror list often fails even though the service
+  // is basically fine a few seconds later. Cycle the list with backoff until
+  // close to the deadline, rather than giving up after one pass.
+  const deadline = Date.now() + 50000;
+  const backoffsMs = [0, 4000, 9000, 15000];
+  for (const backoff of backoffsMs) {
+    if (Date.now() + backoff >= deadline) break;
+    if (backoff > 0) await sleep(backoff);
     for (const url of OVERPASS_MIRRORS) {
+      if (Date.now() >= deadline) break;
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 20000);
+        const timer = setTimeout(() => controller.abort(), 8000);
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
