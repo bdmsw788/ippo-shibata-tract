@@ -89,16 +89,75 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchOverpass(bbox: [number, number, number, number]): Promise<OverpassElement[]> {
+function unescapeXml(s: string) {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function attr(tagText: string, name: string): string | undefined {
+  const m = tagText.match(new RegExp(`${name}="([^"]*)"`));
+  return m ? unescapeXml(m[1]) : undefined;
+}
+
+// Parses the XML returned by OSM's own primary API (api.openstreetmap.org/api/0.6/map),
+// which returns every node/way/relation in a bbox rather than letting the query filter
+// server-side, so filtering by highway tag happens after parsing (in buildGraph).
+function parseOsmXml(xml: string): OverpassElement[] {
+  const elements: OverpassElement[] = [];
+  const nodeRe = /<node\b([^>]*?)\/?>/g;
+  let m: RegExpExecArray | null;
+  while ((m = nodeRe.exec(xml))) {
+    const attrs = m[1];
+    const id = attr(attrs, "id");
+    const lat = attr(attrs, "lat");
+    const lon = attr(attrs, "lon");
+    if (id && lat && lon) {
+      elements.push({ type: "node", id: Number(id), lat: Number(lat), lon: Number(lon) });
+    }
+  }
+  const wayRe = /<way\b([^>]*?)>([\s\S]*?)<\/way>/g;
+  while ((m = wayRe.exec(xml))) {
+    const idAttr = attr(m[1], "id");
+    if (!idAttr) continue;
+    const block = m[2];
+    const nodes: number[] = [];
+    const ndRe = /<nd\s+ref="(\d+)"\s*\/>/g;
+    let nm: RegExpExecArray | null;
+    while ((nm = ndRe.exec(block))) nodes.push(Number(nm[1]));
+    const tags: Record<string, string> = {};
+    const tagRe = /<tag\s+k="([^"]*)"\s+v="([^"]*)"\s*\/>/g;
+    let tm: RegExpExecArray | null;
+    while ((tm = tagRe.exec(block))) tags[unescapeXml(tm[1])] = unescapeXml(tm[2]);
+    elements.push({ type: "way", id: Number(idAttr), nodes, tags });
+  }
+  return elements;
+}
+
+async function fetchOsmApiMap(bbox: [number, number, number, number]): Promise<OverpassElement[]> {
+  const [minLat, minLon, maxLat, maxLon] = bbox;
+  const url = `https://api.openstreetmap.org/api/0.6/map?bbox=${minLon},${minLat},${maxLon},${maxLat}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`osm api -> HTTP ${res.status}`);
+    const xml = await res.text();
+    const elements = parseOsmXml(xml);
+    if (elements.length === 0) throw new Error("osm api -> empty response");
+    return elements;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchOverpassMirrors(bbox: [number, number, number, number], deadline: number): Promise<OverpassElement[]> {
   const [minLat, minLon, maxLat, maxLon] = bbox;
   const query = `[out:json][timeout:25];way["highway"](${minLat},${minLon},${maxLat},${maxLon});out body;>;out skel qt;`;
   const attempts: string[] = [];
-  // Public Overpass mirrors are shared, free infrastructure and routinely
-  // return 429 (rate limited) or block whole cloud IP ranges outright, so a
-  // single pass through the mirror list often fails even though the service
-  // is basically fine a few seconds later. Cycle the list with backoff until
-  // close to the deadline, rather than giving up after one pass.
-  const deadline = Date.now() + 50000;
   const backoffsMs = [0, 4000, 9000, 15000];
   for (const backoff of backoffsMs) {
     if (Date.now() + backoff >= deadline) break;
@@ -130,6 +189,26 @@ async function fetchOverpass(bbox: [number, number, number, number]): Promise<Ov
     }
   }
   throw new Error("all overpass mirrors failed: " + attempts.join(" | "));
+}
+
+async function fetchRoadData(bbox: [number, number, number, number]): Promise<OverpassElement[]> {
+  // Prefer OSM's own primary API: it's official infrastructure (not a
+  // volunteer-run shared mirror), so it doesn't suffer the rate-limit/IP-block
+  // flakiness that public Overpass instances do for cloud/serverless traffic.
+  // Its bbox size cap (0.25 deg^2) is far larger than any single chome, and it
+  // returns every element in the bbox rather than letting us filter
+  // server-side, which is fine since we filter by highway tag afterward anyway.
+  try {
+    return await fetchOsmApiMap(bbox);
+  } catch (primaryErr) {
+    try {
+      return await fetchOverpassMirrors(bbox, Date.now() + 45000);
+    } catch (fallbackErr) {
+      const a = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+      const b = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      throw new Error(`${a} | ${b}`);
+    }
+  }
 }
 
 interface Edge {
@@ -305,7 +384,7 @@ export async function generateWalkRoute(areaId: string, startCoord?: LonLat): Pr
   const pad = BUFFER_M / 111320;
   const bbox: [number, number, number, number] = [Math.min(...lats) - pad, Math.min(...lons) - pad, Math.max(...lats) + pad, Math.max(...lons) + pad];
 
-  const elements = await fetchOverpass(bbox);
+  const elements = await fetchRoadData(bbox);
   const { nodePos, edges, adjacency } = buildGraph(elements, poly);
   if (edges.length === 0) throw new Error("no street data found for this area");
 
