@@ -170,6 +170,12 @@ export const SHELL_HTML = `
           </div>
         </div>
         <div class="empty-note">※国勢調査 小地域境界データを基にした実際の町丁目・字の形状です。世帯数が非公開の一部地域と、ごく小規模な字（数世帯程度）は個別の形状を持たないため「データなし」表示、またはリスト表示のみとなります。</div>
+
+        <div class="card" id="routeDirectionsCard" style="display:none;">
+          <div class="card-title"><h3>🚶 配布ルートの道順</h3><button class="link" id="routeDirectionsClose">閉じる</button></div>
+          <div class="hint" id="routeDirectionsSummary" style="margin-bottom:8px;"></div>
+          <div id="routeDirectionsList"></div>
+        </div>
       </div>
 
       <div id="areaListPane" style="display:none;">

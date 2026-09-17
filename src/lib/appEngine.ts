@@ -39,6 +39,68 @@ function progressColor(pct: number) {
 function fmt(n: number) {
   return Math.round(n).toLocaleString("ja-JP");
 }
+function haversineM(a: [number, number], b: [number, number]) {
+  const R = 6371000;
+  const [lon1, lat1] = a;
+  const [lon2, lat2] = b;
+  const p1 = (lat1 * Math.PI) / 180;
+  const p2 = (lat2 * Math.PI) / 180;
+  const dphi = ((lat2 - lat1) * Math.PI) / 180;
+  const dlambda = ((lon2 - lon1) * Math.PI) / 180;
+  const h = Math.sin(dphi / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dlambda / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function bearingDeg(a: [number, number], b: [number, number]) {
+  const [lon1, lat1] = a;
+  const [lon2, lat2] = b;
+  const p1 = (lat1 * Math.PI) / 180;
+  const p2 = (lat2 * Math.PI) / 180;
+  const dl = ((lon2 - lon1) * Math.PI) / 180;
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+type RouteTurn = "start" | "straight" | "left" | "right" | "uturn";
+interface RouteStep {
+  turn: RouteTurn;
+  distance: number;
+}
+// Simplifies the ordered route walk into discrete legs ("go this far, then
+// turn this way"), by watching the bearing between consecutive points and
+// only calling it a turn once the heading has shifted enough (and the
+// current leg is long enough) to be a real decision point, not GPS-shape-point
+// noise from the source road geometry.
+function buildDirections(coords: [number, number][]): RouteStep[] {
+  if (coords.length < 2) return [];
+  const steps: RouteStep[] = [];
+  let heading: number | null = null;
+  let acc = 0;
+  const MIN_LEG_M = 8;
+  const TURN_THRESHOLD_DEG = 25;
+  const UTURN_THRESHOLD_DEG = 150;
+  for (let i = 1; i < coords.length; i++) {
+    const d = haversineM(coords[i - 1], coords[i]);
+    if (d < 0.5) continue;
+    const b = bearingDeg(coords[i - 1], coords[i]);
+    if (heading === null) {
+      heading = b;
+      acc += d;
+      continue;
+    }
+    const diff = ((b - heading + 540) % 360) - 180;
+    if (Math.abs(diff) < TURN_THRESHOLD_DEG || acc < MIN_LEG_M) {
+      acc += d;
+      heading = b;
+      continue;
+    }
+    const turn: RouteTurn = Math.abs(diff) > UTURN_THRESHOLD_DEG ? "uturn" : diff > 0 ? "right" : "left";
+    steps.push({ turn: steps.length === 0 ? "start" : turn, distance: acc });
+    acc = d;
+    heading = b;
+  }
+  steps.push({ turn: steps.length === 0 ? "start" : "straight", distance: acc });
+  return steps;
+}
 function pad2(n: number) {
   return n < 10 ? "0" + n : "" + n;
 }
@@ -832,6 +894,8 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
       routeLayer.remove();
       routeLayer = null;
     }
+    const directionsCard = el("routeDirectionsCard");
+    if (directionsCard) directionsCard.style.display = "none";
     showToast(`${a.name}の配布ルートを作成中…（30秒ほどかかることがあります）`);
     try {
       const res = await fetch(`/api/route/${encodeURIComponent(areaId)}`);
@@ -847,9 +911,31 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
       map.fitBounds(routeLayer.getBounds(), { padding: [24, 24] });
       const km = (data.distanceMeters / 1000).toFixed(1);
       showToast(`ルートを作成しました（約${km}km）`, true);
+      renderRouteDirections(data.coords as [number, number][], data.distanceMeters as number);
     } catch {
       showToast("ルートを作成できませんでした。通信環境を確認してください");
     }
+  }
+  const turnLabel: Record<RouteTurn, string> = { start: "出発", straight: "直進", left: "左折", right: "右折", uturn: "Uターン" };
+  const turnIcon: Record<RouteTurn, string> = { start: "🚩", straight: "↑", left: "↰", right: "↱", uturn: "↩" };
+  function renderRouteDirections(coords: [number, number][], distanceMeters: number) {
+    const card = el("routeDirectionsCard");
+    if (!card) return;
+    const steps = buildDirections(coords);
+    card.style.display = "";
+    el("routeDirectionsSummary")!.textContent = `総距離 約${(distanceMeters / 1000).toFixed(1)}km ・ ${steps.length}区間`;
+    el("routeDirectionsList")!.innerHTML =
+      steps
+        .map(
+          (s, i) => `
+      <div class="route-step">
+        <div class="route-step-icon">${turnIcon[s.turn]}</div>
+        <div class="route-step-main">${i + 1}. ${turnLabel[s.turn]}${s.turn !== "start" ? "して進む" : ""}</div>
+        <div class="route-step-dist">${fmt(s.distance)}m</div>
+      </div>`
+        )
+        .join("") + `<div class="route-step-goal">🏁 出発地点に戻ってゴールです</div>`;
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
   function renderMapDistrictJump() {
     const container = el("mapDistrictJump");
@@ -921,6 +1007,9 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
       });
     });
     el("areaSearch")!.addEventListener("input", renderAreaList);
+    el("routeDirectionsClose")?.addEventListener("click", () => {
+      el("routeDirectionsCard")!.style.display = "none";
+    });
     document.querySelectorAll<HTMLElement>("#statusFilterRow .filter-chip").forEach((c) => {
       c.addEventListener("click", () => {
         areaListStatus = c.dataset.status!;
