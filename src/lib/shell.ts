@@ -120,6 +120,7 @@ export const SHELL_HTML = `
             <input type="text" inputmode="numeric" id="fCount" value="10">
             <button type="button" id="stepPlus">＋</button>
           </div>
+          <button type="button" class="qchip" id="fillRemaining" style="margin-top:9px;">🏠 残りの世帯数を一気に入力</button>
         </div>
         <div class="field" style="margin-bottom:14px;">
           <label>📝 現場メモ（任意）</label>

@@ -420,7 +420,7 @@ main{flex:1;padding:16px 16px 100px;display:flex;flex-direction:column;gap:10px;
 
 /* ---------- sheet / modal ---------- */
 .overlay{
-  position:fixed;inset:0;background:rgba(20,26,22,.5);z-index:100;
+  position:fixed;inset:0;background:rgba(20,26,22,.5);z-index:2000;
   display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s ease;
 }
 .overlay.open{opacity:1;pointer-events:auto;}
@@ -434,7 +434,7 @@ main{flex:1;padding:16px 16px 100px;display:flex;flex-direction:column;gap:10px;
 .sheet-close{position:absolute;top:16px;right:16px;background:var(--surface-2);border:none;width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer;color:var(--text-muted);}
 
 /* ---------- toast ---------- */
-.toast-wrap{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:200;width:calc(100% - 32px);max-width:448px;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+.toast-wrap{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2100;width:calc(100% - 32px);max-width:448px;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
 .toast{
   background:var(--text);color:var(--bg);border-radius:14px;padding:13px 16px;font-size:13.5px;font-weight:600;
   box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:10px;

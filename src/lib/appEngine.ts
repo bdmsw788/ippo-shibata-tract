@@ -327,16 +327,19 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
     renderMemoChips();
     renderRecentAreaChips();
   }
-  function populateAreaSelect(districtId: string) {
+  function populateAreaSelect(districtId: string, keepAreaId?: string) {
     const d = DISTRICTS.find((x) => x.id === districtId)!;
     const sel = el<HTMLSelectElement>("fArea")!;
-    sel.innerHTML = d.areas
+    const visible = d.areas.filter((a) => areaPct(a) < 100 || a.id === keepAreaId);
+    const list = visible.length ? visible : d.areas;
+    sel.innerHTML = list
       .map((a) => {
         const pct = areaPct(a);
         const tag = pct >= 100 ? "（完了）" : pct > 0 ? `（${pct}%）` : "";
         return `<option value="${a.id}">${a.name} ・${fmt(a.households)}世帯${tag}</option>`;
       })
       .join("");
+    if (keepAreaId) sel.value = keepAreaId;
     updateAreaHint();
   }
   function updateAreaHint() {
@@ -408,9 +411,7 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
     wrap.querySelectorAll<HTMLElement>(".qchip").forEach((c) => {
       c.addEventListener("click", () => {
         el<HTMLSelectElement>("fDistrict")!.value = c.dataset.district!;
-        populateAreaSelect(c.dataset.district!);
-        el<HTMLSelectElement>("fArea")!.value = c.dataset.area!;
-        updateAreaHint();
+        populateAreaSelect(c.dataset.district!, c.dataset.area!);
         window.scrollTo({ top: 0, behavior: "smooth" });
       });
     });
@@ -589,9 +590,7 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
   function prefillRecord(districtId: string, areaId: string) {
     navTo("record");
     el<HTMLSelectElement>("fDistrict")!.value = districtId;
-    populateAreaSelect(districtId);
-    el<HTMLSelectElement>("fArea")!.value = areaId;
-    updateAreaHint();
+    populateAreaSelect(districtId, areaId);
   }
   function openSheet(html: string) {
     el("sheetBody")!.innerHTML = html;
@@ -751,12 +750,18 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
         attributionControl: false,
         keyboard: false,
       });
-      Leaf.tileLayer(OSM_URL, { attribution: "" }).addTo(miniMap);
       const cityLayer = Leaf.geoJSON(geo.city, { style: { fill: false, color: cssVar("--border-strong"), weight: 1.3 }, interactive: false });
       cityLayer.addTo(miniMap);
+      miniMap.invalidateSize();
       miniMap.fitBounds(cityLayer.getBounds(), { padding: [4, 4] });
+      // Shibata's administrative area is long and thin (merged rural/coastal exclaves),
+      // so fitting the full extent into a short preview box zooms out too far to read.
+      // Favor legibility of the populated core over showing every remote corner.
+      if (miniMap.getZoom() < 10) miniMap.setZoom(10);
+      // No tile layer here on purpose: OSM street detail competes with the progress
+      // colors and makes this at-a-glance widget harder to read, not easier.
       miniDistrictLayer = Leaf.geoJSON(geo.districts, {
-        style: (feature) => districtStyleFor(DISTRICTS.find((x) => x.id === feature!.properties!.districtId)!),
+        style: (feature) => ({ ...districtStyleFor(DISTRICTS.find((x) => x.id === feature!.properties!.districtId)!), fillOpacity: 0.85 }),
         onEachFeature: (feature, layer) => {
           const d = DISTRICTS.find((x) => x.id === feature.properties!.districtId)!;
           layer.on("click", () => {
@@ -849,6 +854,13 @@ export function mountIppoApp(initialRecords: TractRecord[]): () => void {
     });
     el("fCount")!.addEventListener("input", () => {
       updateImpactPreview(AREA_BY_ID[el<HTMLSelectElement>("fArea")!.value]);
+    });
+    el("fillRemaining")!.addEventListener("click", () => {
+      const a = AREA_BY_ID[el<HTMLSelectElement>("fArea")!.value];
+      if (!a) return;
+      const remaining = a.households - distributedFor(a.id);
+      el<HTMLInputElement>("fCount")!.value = String(Math.max(1, remaining));
+      updateImpactPreview(a);
     });
 
     document.querySelectorAll<HTMLElement>("#areaModeSeg button").forEach((b) => {
