@@ -92,7 +92,7 @@ async function sleep(ms: number) {
 async function fetchOverpass(bbox: [number, number, number, number]): Promise<OverpassElement[]> {
   const [minLat, minLon, maxLat, maxLon] = bbox;
   const query = `[out:json][timeout:25];way["highway"](${minLat},${minLon},${maxLat},${maxLon});out body;>;out skel qt;`;
-  let lastErr: unknown = null;
+  const attempts: string[] = [];
   // Public Overpass mirrors rate-limit per client; a single request occasionally
   // hits a mirror mid-cooldown, so cycle the mirror list twice with a short
   // backoff rather than giving up after one pass.
@@ -110,20 +110,20 @@ async function fetchOverpass(bbox: [number, number, number, number]): Promise<Ov
         });
         clearTimeout(timer);
         if (!res.ok) {
-          lastErr = new Error(`${url} -> ${res.status}`);
+          attempts.push(`${url} -> HTTP ${res.status}`);
           continue;
         }
         const data = await res.json();
         if (Array.isArray(data.elements) && data.elements.length > 0) {
           return data.elements as OverpassElement[];
         }
-        lastErr = new Error(`${url} -> empty elements`);
+        attempts.push(`${url} -> empty elements`);
       } catch (e) {
-        lastErr = e;
+        attempts.push(`${url} -> ${e instanceof Error ? e.message : String(e)}`);
       }
     }
   }
-  throw lastErr ?? new Error("all overpass mirrors failed");
+  throw new Error("all overpass mirrors failed: " + attempts.join(" | "));
 }
 
 interface Edge {
